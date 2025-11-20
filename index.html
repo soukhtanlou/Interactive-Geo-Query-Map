@@ -3,369 +3,559 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نقشه خدمات ضروری اجتماعی (Social Amenities Map)</title>
-    <!-- Tailwind CSS CDN for styling -->
+    <title>نقشه تعاملی و جستجوی جغرافیایی (Geo-Query Map)</title>
+    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Leaflet CSS for map display -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/SDAf/GPGDeQvVzHME="
-          crossorigin=""/>
     <style>
-        /* Custom styles for the map container and full screen layout */
-        body, html {
-            height: 100%;
-            margin: 0;
+        /* Custom CSS for map container and text alignment */
+        body {
             font-family: 'Inter', sans-serif;
-            overflow: hidden; /* Prevent body scroll */
+            background-color: #f7f9fb; /* Light background */
         }
         #map {
-            height: calc(100vh - 12rem); /* Adjust height based on header/footer size */
-            min-height: 400px;
+            height: 600px;
             width: 100%;
-            border-radius: 0.5rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-xl */
         }
-        /* Custom styles for the result summary box */
-        .summary-box {
-            position: absolute;
-            top: 10px;
-            left: 10px;
+        .leaflet-draw-toolbar, .leaflet-draw-actions {
+            /* Fix Draw tools position */
             z-index: 1000;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            font-size: 0.9rem;
-            max-width: 90%;
-            transition: opacity 0.3s;
         }
-        .summary-box.hidden {
-            opacity: 0;
-            pointer-events: none;
+        .container {
+            max-width: 1400px;
+        }
+        /* Ensure Persian text is aligned right */
+        .text-right-rtl {
+            text-align: right !important;
+        }
+        .list-disc-rtl {
+            padding-right: 1.5rem;
+            list-style-type: disc;
         }
     </style>
+    <!-- Load Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <!-- Load Leaflet Draw CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
 </head>
-<body class="bg-gray-50 flex flex-col h-screen">
+<body class="p-4 sm:p-8">
 
-    <header class="p-4 bg-white shadow-md">
-        <h1 class="text-2xl font-bold text-blue-700">جستجوی خدمات ضروری منطبق با ماموریت یونیسف</h1>
-        <p class="text-sm text-gray-500">مکان و نوع سرویس‌های مورد نیاز (مانند آموزش و سلامت) را وارد کنید تا مکان‌های مرتبط در محدوده نمایان شوند.</p>
-    </header>
+    <div class="container mx-auto">
+        <!-- Header -->
+        <header class="mb-8 text-center bg-white p-6 rounded-xl shadow-lg">
+            <h1 class="text-3xl font-extrabold text-blue-700 mb-2">OSM Facility Locator (جستجوی مراکز عمومی)</h1>
+            <p class="text-gray-600">لایه مورد نظر خود را روی نقشه رسم کنید و مراکز عمومی (مانند مدارس یا بیمارستان‌ها) را در محدوده آن بیابید.</p>
+        </header>
 
-    <main class="flex-grow p-4 overflow-hidden">
-        <div class="flex flex-col lg:flex-row gap-4 mb-4">
-            <!-- Location Input -->
-            <div class="flex flex-grow items-center space-x-2 space-x-reverse">
-                <input type="text" id="locationInput" placeholder="نام شهر، منطقه یا خیابان (مثلاً تهران)" 
-                       class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
-                <button id="searchLocationButton" 
-                        class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition duration-150 ease-in-out transform hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
-                        title="نقشه را به محدوده جستجو شده منتقل می‌کند">
-                    جستجوی مکان
-                </button>
-            </div>
-        </div>
-
-        <!-- Service Group Buttons (New Feature) -->
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:flex lg:flex-wrap gap-2 mb-4">
-            <h3 class="font-medium text-gray-700 lg:mr-4 lg:self-center col-span-2 md:col-span-4 lg:col-span-auto">یا جستجو بر اساس گروه:</h3>
-            <button class="serviceGroupButton bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition" data-group="آموزش">📚 آموزش و یادگیری</button>
-            <button class="serviceGroupButton bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition" data-group="سلامت">🏥 بهداشت و سلامت</button>
-            <button class="serviceGroupButton bg-yellow-500 hover:bg-yellow-600 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition" data-group="تغذیه">🛒 آب، غذا و پناهگاه</button>
-            <button class="serviceGroupButton bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition" data-group="خدمات_اجتماعی">🛡️ خدمات اجتماعی/حفاظت</button>
-        </div>
-
-        <!-- Map Container -->
-        <div id="map" class="shadow-xl"></div>
-        
-        <!-- Loading Indicator -->
-        <div id="loadingIndicator" class="summary-box hidden">
-            <div class="flex items-center space-x-2 space-x-reverse">
-                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span class="text-blue-700">در حال جستجوی مکان‌ها...</span>
-            </div>
-        </div>
-
-        <!-- Result Summary -->
-        <div id="resultSummary" class="summary-box hidden text-gray-800"></div>
-
-    </main>
-
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-            integrity="sha256-2Pmvv0kuTBOz8S+U1XF7Cs_v1K3PXYYgEaAU/LZSgC1="
-            crossorigin=""></script>
-
-    <script>
-        // Set up the Leaflet map
-        const map = L.map('map').setView([32.4279, 53.6880], 5); // Default view: Center of Iran
-
-        // Add the base tile layer (OpenStreetMap)
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
-
-        let markers = L.layerGroup().addTo(map);
-        let currentBoundingBox = null;
-        const resultSummary = document.getElementById('resultSummary');
-        const locationInput = document.getElementById('locationInput');
-        const searchLocationButton = document.getElementById('searchLocationButton');
-        const loadingIndicator = document.getElementById('loadingIndicator');
-        const serviceGroupButtons = document.querySelectorAll('.serviceGroupButton');
-        
-        // --- Core UNICEF-Relevant Tag Definitions ---
-        // Maps group names to a list of Overpass QL tag queries (e.g., "key=value")
-        const UNICEF_TAGS = {
-            "آموزش": [
-                "amenity=school", 
-                "amenity=kindergarten",
-                "amenity=college",
-                "amenity=university",
-                "building=school",
-                "building=university"
-            ],
-            "سلامت": [
-                "amenity=hospital",
-                "amenity=clinic",
-                "amenity=doctors",
-                "amenity=pharmacy",
-                "healthcare=public_health"
-            ],
-            "تغذیه": [
-                "amenity=feeding_station",
-                "amenity=water_point",
-                "building=shelter", // پناهگاه
-                "amenity=market", // بازار (برای دسترسی به غذا)
-                "amenity=food_bank"
-            ],
-            "خدمات_اجتماعی": [
-                "amenity=social_facility", // کلیه خدمات اجتماعی
-                "amenity=childcare", // مراقبت از کودک
-                "social_facility=orphanage", // یتیم‌خانه / مراکز نگهداری
-                "amenity=police", // امنیت و حفاظت
-                "amenity=fire_station" // خدمات اضطراری
-            ]
-        };
-
-        // Utility function for exponential backoff retry logic
-        async function fetchWithRetry(url, options, maxRetries = 5) {
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    const response = await fetch(url, options);
-                    if (response.status === 429) {
-                        // Too many requests, wait longer
-                        const waitTime = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                        console.warn(`429 Too Many Requests. Retrying in ${waitTime}ms...`);
-                        await new Promise(resolve => setTimeout(resolve, waitTime));
-                        continue;
-                    }
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return response;
-                } catch (error) {
-                    if (i === maxRetries - 1) throw error;
-                    const waitTime = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                    console.error(`Fetch failed. Retrying in ${waitTime}ms...`, error);
-                    await new Promise(resolve => setTimeout(resolve, waitTime));
-                }
-            }
-        }
-
-        // --- Geocoding Function (Location to Coordinates) ---
-        async function geocodeLocation(locationName) {
-            loadingIndicator.classList.remove('hidden');
-            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=json&limit=1`;
-            try {
-                const response = await fetchWithRetry(url);
-                const data = await response.json();
-                loadingIndicator.classList.add('hidden');
-
-                if (data && data.length > 0) {
-                    const place = data[0];
-                    const bbox = place.boundingbox.map(Number); // [minLat, maxLat, minLon, maxLon]
-                    currentBoundingBox = [bbox[0], bbox[2], bbox[1], bbox[3]]; // [S, W, N, E]
-                    const lat = parseFloat(place.lat);
-                    const lon = parseFloat(place.lon);
-                    
-                    // Move map to the found location bounds
-                    map.fitBounds([
-                        [bbox[0], bbox[2]], // SW
-                        [bbox[1], bbox[3]]  // NE
-                    ]);
-
-                    resultSummary.classList.remove('hidden');
-                    resultSummary.innerHTML = `<strong>محدوده یافت شد:</strong> ${place.display_name}`;
-                    return true;
-                } else {
-                    resultSummary.classList.remove('hidden');
-                    resultSummary.innerHTML = `<strong class="text-red-600">خطا:</strong> مکان '${locationName}' یافت نشد.`;
-                    return false;
-                }
-            } catch (error) {
-                loadingIndicator.classList.add('hidden');
-                resultSummary.classList.remove('hidden');
-                resultSummary.innerHTML = `<strong class="text-red-600">خطا در جستجوی مکان:</strong> لطفا دوباره تلاش کنید.`;
-                console.error("Geocoding Error:", error);
-                return false;
-            }
-        }
-
-        // --- Overpass Query Builder ---
-        function buildOverpassQuery(tags, bbox) {
-            const [minLat, minLon, maxLat, maxLon] = bbox;
-            const bboxString = `${minLat},${minLon},${maxLat},${maxLon}`;
+        <!-- Main Grid Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            // Build the core query for all nodes and ways (areas) matching the tags
-            const queryBody = tags.map(tag => {
-                const [key, value] = tag.split('=');
-                // Query for nodes (points) and ways (polygons)
-                return `node[${key}="${value}"](${bboxString});
-                        way[${key}="${value}"](${bboxString});`;
-            }).join('\n');
+            <!-- Sidebar / Controls -->
+            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg h-full space-y-6">
+                
+                <h2 class="text-xl font-bold text-gray-800 border-b pb-3 mb-4">تنظیمات و داده‌ها</h2>
 
-            // Combine into the final Overpass QL query
-            const query = `
-                [out:json][timeout:60];
-                (
-                    ${queryBody}
-                );
-                out center;
-            `;
-            console.log("Generated Overpass Query:", query);
-            return query;
+                <!-- 1. Facility Type Selector -->
+                <div class="space-y-2">
+                    <label for="facilityType" class="block text-sm font-medium text-gray-700">۱. نوع مرکز مورد جستجو را انتخاب کنید:</label>
+                    <select id="facilityType" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+                        <option value="school" selected>School (مدرسه)</option>
+                        <option value="hospital">Hospital (بیمارستان)</option>
+                        <option value="pharmacy">Pharmacy (داروخانه)</option>
+                        <option value="university">University (دانشگاه)</option>
+                        <option value="fire_station">Fire Station (ایستگاه آتش‌نشانی)</option>
+                        <option value="place_of_worship">Place of Worship (مکان مذهبی)</option>
+                        <option value="other">Other (سایر - amenity=*)</option>
+                    </select>
+                </div>
+
+                <!-- 2. GeoJSON Upload -->
+                <div class="space-y-2">
+                    <label for="geojsonUpload" class="block text-sm font-medium text-gray-700">۲. محدوده را آپلود کنید (GeoJSON Polygon):</label>
+                    <input type="file" id="geojsonUpload" accept=".geojson,.json" class="w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100"
+                    />
+                </div>
+                <div id="uploadStatus" class="text-sm text-red-600 hidden mt-1"></div>
+
+                <!-- 3. Action Button -->
+                <button onclick="runAnalysis()" id="runButton" class="w-full flex items-center justify-center bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition duration-200 disabled:opacity-50">
+                    <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.276a1.2 1.2 0 010 1.698l-7 7a1.2 1.2 0 01-1.698 0l-3-3a1.2 1.2 0 111.698-1.698l2.302 2.302 6.302-6.302a1.2 1.2 0 011.698 0z"></path></svg>
+                    شروع جستجو در محدوده تعریف شده
+                </button>
+                <div id="loadingIndicator" class="hidden text-center text-blue-600 mt-4">در حال دریافت داده‌ها از OSM...</div>
+
+                <div id="messageBox" class="p-3 mt-4 bg-yellow-100 border-r-4 border-yellow-500 text-yellow-700 rounded-lg text-sm hidden">
+                    <p id="messageText"></p>
+                </div>
+            </div>
+
+            <!-- Map and Results -->
+            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-xl font-bold text-gray-800 border-b pb-3 mb-4">نقشه و ترسیم منطقه (AOI)</h2>
+                <div id="map"></div>
+                
+                <h2 class="text-xl font-bold text-gray-800 border-b pb-3 mt-8 mb-4">نتایج جستجو</h2>
+                <div id="resultsTable" class="overflow-x-auto">
+                    <!-- Results Data will be inserted here -->
+                    <p class="text-gray-500">پس از تعریف محدوده و اجرای جستجو، نتایج در این قسمت نمایش داده می‌شوند.</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Load Leaflet JS -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Load Turf.js (for geometry operations like BBox and Point-in-Polygon) -->
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <!-- Load Leaflet Draw JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    
+    <script>
+        // --- Global Variables ---
+        const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+        let map;
+        let drawnItems; // Feature group for storing drawn layers
+        let facilityLayer; // Feature group for showing facility markers
+
+        // GeoJSON for uploaded area (if any)
+        let uploadedGeoJsonLayer = null;
+
+        // --- Utility Functions ---
+
+        /** Shows an alert message on the UI. */
+        function showMessage(text, type = 'info') {
+            const messageBox = document.getElementById('messageBox');
+            const messageText = document.getElementById('messageText');
+            messageText.textContent = text;
+            messageBox.className = `p-3 mt-4 border-r-4 rounded-lg text-sm ${type === 'error' ? 'bg-red-100 border-red-500 text-red-700' : type === 'success' ? 'bg-green-100 border-green-500 text-green-700' : 'bg-yellow-100 border-yellow-500 text-yellow-700'}`;
+            messageBox.classList.remove('hidden');
         }
 
-        // --- Data Fetching Function (Overpass API) ---
-        async function fetchOSMData(tags, groupName) {
-            if (!currentBoundingBox) {
-                resultSummary.classList.remove('hidden');
-                resultSummary.innerHTML = `<strong class="text-red-600">خطا:</strong> ابتدا یک مکان را جستجو کنید.`;
+        /** Hides the alert message. */
+        function hideMessage() {
+            document.getElementById('messageBox').classList.add('hidden');
+        }
+
+        /** Converts a GeoJSON FeatureCollection/Feature/Geometry to a single combined GeoJSON Polygon. */
+        function getCombinedAreaGeoJSON() {
+            const allFeatures = [];
+            
+            // 1. Get features from manually drawn layers
+            drawnItems.eachLayer(function(layer) {
+                if (layer instanceof L.Polygon) {
+                    allFeatures.push(layer.toGeoJSON());
+                }
+            });
+
+            // 2. Get features from uploaded GeoJSON
+            if (uploadedGeoJsonLayer) {
+                uploadedGeoJsonLayer.eachLayer(function(layer) {
+                    // Check if the layer has geometry data
+                    const geojson = layer.toGeoJSON ? layer.toGeoJSON() : layer.feature;
+                    if (geojson) {
+                        allFeatures.push(geojson);
+                    }
+                });
+            }
+
+            if (allFeatures.length === 0) {
+                return null;
+            }
+
+            // Combine all features into one MultiPolygon/Polygon using Turf.js union
+            try {
+                // Use turf.union iteratively, starting with the first feature
+                let unifiedGeometry = allFeatures[0];
+                for (let i = 1; i < allFeatures.length; i++) {
+                    // Skip if the union operation fails for any reason
+                    try {
+                        const nextUnion = turf.union(unifiedGeometry, allFeatures[i]);
+                        if (nextUnion) {
+                            unifiedGeometry = nextUnion;
+                        }
+                    } catch (innerError) {
+                        console.warn("Skipping geometry union due to error:", innerError);
+                        // Continue with the previous unified geometry
+                    }
+                }
+                return unifiedGeometry; // This is the single GeoJSON object for the combined area
+            } catch(e) {
+                console.error("Error unifying geometries:", e);
+                showMessage('خطا در ترکیب لایه‌های رسم شده/آپلود شده. لطفاً اشکال خود را بررسی کنید.', 'error');
+                return null;
+            }
+        }
+        
+        /** Generates the corrected Overpass QL query string. */
+        function generateOverpassQuery(bbox, amenityTag) {
+            // bbox format: minlat, minlon, maxlat, maxlon
+            
+            // The corrected query uses the standard Bounding Box filter (bbox) 
+            // implicitly applied to all elements, avoiding the 'poly' attribute error.
+            return `
+[out:json][timeout:25];
+// Set the bounding box once for the entire query
+(
+  // Nodes (points) inside the BBox
+  node["amenity"="${amenityTag}"](${bbox});
+  // Ways (lines/areas) inside the BBox
+  way["amenity"="${amenityTag}"](${bbox});
+  // Relations (multi-polygons/complex areas) inside the BBox
+  rel["amenity"="${amenityTag}"](${bbox});
+);
+// Output the centers of ways/relations for Point-in-Polygon check
+out center;
+`;
+        }
+
+        /** Parses the Overpass JSON response into a list of points. */
+        function parseOverpassData(jsonResponse) {
+            const facilities = [];
+            const elements = jsonResponse.elements || [];
+
+            elements.forEach(el => {
+                let lat, lon;
+                
+                // Get coordinates (center coordinates for ways/relations)
+                if (el.type === 'node') {
+                    lat = el.lat;
+                    lon = el.lon;
+                } else if (el.center) { // 'way' or 'relation' using 'out center'
+                    lat = el.center.lat;
+                    lon = el.center.lon;
+                }
+
+                if (lat && lon) {
+                    facilities.push({
+                        name: el.tags.name || `OSM ${el.tags.amenity || 'Facility'}`,
+                        type: el.tags.amenity,
+                        lat: lat,
+                        lon: lon,
+                        tags: el.tags 
+                    });
+                }
+            });
+            return facilities;
+        }
+
+        /** Fetches data from Overpass API with retries (Exponential Backoff). */
+        async function fetchOverpassData(query, maxRetries = 3) {
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(OVERPASS_URL, {
+                        method: 'POST',
+                        body: query
+                    });
+
+                    if (response.ok) {
+                        return await response.json();
+                    } else {
+                        // Throw specific error for immediate failure or if max retries reached
+                        const errorText = await response.text();
+                        if (response.status === 400) {
+                             throw new Error(`Overpass API Error ${response.status}: Invalid Query syntax. The full error response from the server indicates a syntax problem, likely related to polygon definition.`);
+                        }
+                        if (response.status === 429 && attempt < maxRetries - 1) {
+                            const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                            console.warn(`Attempt ${attempt + 1}: Rate limit exceeded. Retrying in ${Math.round(delay / 1000)}s...`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        } else {
+                            throw new Error(`Overpass API Error ${response.status}: Failed to fetch data.`);
+                        }
+                    }
+                } catch (error) {
+                    // Log the error for console details and rethrow if it's the final attempt
+                    console.error("Fetch attempt failed:", error.message);
+                    if (attempt === maxRetries - 1 || error.message.includes('400')) {
+                        throw error;
+                    }
+                }
+            }
+        }
+
+
+        // --- Main Logic ---
+
+        /** Initializes the map and the drawing controls. */
+        function initMap() {
+            // Initial view focused on a general area (e.g., Near Iran/Middle East)
+            map = L.map('map').setView([32.6, 53.6], 6); 
+
+            // Add OSM tile layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            // Initialize the FeatureGroup for drawn items
+            drawnItems = new L.FeatureGroup().addTo(map);
+
+            // Initialize the FeatureGroup for facility markers
+            facilityLayer = new L.FeatureGroup().addTo(map);
+
+            // Initialize the Draw control
+            const drawControl = new L.Control.Draw({
+                edit: {
+                    featureGroup: drawnItems,
+                    poly: { allowIntersection: false }
+                },
+                draw: {
+                    polygon: {
+                        allowIntersection: false, // Prevents self-intersection
+                        showArea: true,
+                        shapeOptions: { color: '#007bff', fillColor: '#007bff', fillOpacity: 0.1 }
+                    },
+                    polyline: false,
+                    rectangle: false,
+                    circle: false,
+                    marker: false,
+                    circlemarker: false
+                }
+            });
+            map.addControl(drawControl);
+
+            // Add listeners for drawn shapes
+            map.on(L.Draw.Event.CREATED, function (e) {
+                const layer = e.layer;
+                // Add the new layer to the drawn items group
+                drawnItems.addLayer(layer);
+                hideMessage(); // Hide messages after a successful drawing
+            });
+            
+            // Add listeners for edited shapes
+            map.on(L.Draw.Event.EDITED, function (e) {
+                hideMessage(); 
+            });
+
+
+            // Set up file upload listener
+            document.getElementById('geojsonUpload').addEventListener('change', handleGeoJSONUpload);
+        }
+
+        /** Handles GeoJSON file upload and adds it to the map. */
+        function handleGeoJSONUpload(event) {
+            const file = event.target.files[0];
+            const statusDiv = document.getElementById('uploadStatus');
+            statusDiv.classList.add('hidden');
+            
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const geojsonData = JSON.parse(e.target.result);
+                        
+                        // Clear existing uploaded layer
+                        if (uploadedGeoJsonLayer) {
+                            uploadedGeoJsonLayer.clearLayers();
+                            map.removeLayer(uploadedGeoJsonLayer);
+                        }
+
+                        // Add new GeoJSON layer to the map
+                        uploadedGeoJsonLayer = L.geoJson(geojsonData, {
+                            style: function(feature) {
+                                return {
+                                    color: '#dc3545', 
+                                    weight: 3, 
+                                    fillOpacity: 0.3,
+                                    fillColor: '#dc3545',
+                                };
+                            },
+                            // Only allow Polygon or MultiPolygon features
+                            filter: function(feature, layer) {
+                                const type = feature.geometry.type;
+                                return type === 'Polygon' || type === 'MultiPolygon';
+                            },
+                            onEachFeature: function(feature, layer) {
+                                // Add tooltips or popups if needed
+                                const type = feature.geometry.type;
+                                layer.bindTooltip(`Uploaded Area: ${type}`);
+                            }
+                        }).addTo(map);
+                        
+                        // Zoom to the bounds of the uploaded layer
+                        map.fitBounds(uploadedGeoJsonLayer.getBounds());
+                        statusDiv.textContent = 'فایل GeoJSON با موفقیت بارگذاری شد.';
+                        statusDiv.className = 'text-sm text-green-600 mt-1';
+                        statusDiv.classList.remove('hidden');
+                        hideMessage();
+
+                    } catch (error) {
+                        statusDiv.textContent = 'خطا در خواندن فایل GeoJSON. لطفاً مطمئن شوید فایل شما فرمت GeoJSON معتبر دارد و شامل Polygon/MultiPolygon است.';
+                        statusDiv.className = 'text-sm text-red-600 mt-1';
+                        statusDiv.classList.remove('hidden');
+                        console.error("GeoJSON parsing error:", error);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+
+        /** Main function to run the analysis (Fetch and Display). */
+        async function runAnalysis() {
+            hideMessage();
+            document.getElementById('loadingIndicator').classList.remove('hidden');
+            document.getElementById('runButton').disabled = true;
+
+            try {
+                // 1. Get combined area geometry
+                const combinedGeoJSON = getCombinedAreaGeoJSON();
+                if (!combinedGeoJSON) {
+                    showMessage('لطفاً ابتدا یک محدوده (Polygon) روی نقشه رسم کنید یا یک فایل GeoJSON آپلود کنید.', 'info');
+                    return;
+                }
+
+                // 2. Calculate Bounding Box (BBox)
+                // Turf.js bbox returns [minX, minY, maxX, maxY] -> [minLon, minLat, maxLon, maxLat]
+                const bboxTurf = turf.bbox(combinedGeoJSON);
+                
+                // Overpass format is: minlat, minlon, maxlat, maxlon
+                const bboxOverpass = `${bboxTurf[1]},${bboxTurf[0]},${bboxTurf[3]},${bboxTurf[2]}`; 
+                
+                // 3. Get facility type
+                const amenityTag = document.getElementById('facilityType').value;
+
+                // 4. Generate and Fetch data from Overpass
+                const query = generateOverpassQuery(bboxOverpass, amenityTag);
+                const jsonResponse = await fetchOverpassData(query);
+                const allFacilities = parseOverpassData(jsonResponse);
+                
+                if (allFacilities.length === 0) {
+                    showMessage(`مرکزی با تگ "${amenityTag}" در این منطقه یافت نشد (حتی در BBox).`, 'info');
+                    renderResults(allFacilities);
+                    return;
+                }
+
+                // 5. Filter facilities strictly inside the combined polygon using Turf.js
+                // Create a single feature for the combined polygon to check against
+                const polygonToCheck = combinedGeoJSON;
+
+                const featuresToCheck = turf.featureCollection(allFacilities.map(f => 
+                    turf.point([f.lon, f.lat], f)
+                ));
+
+                const insideFeatures = featuresToCheck.features.filter(feature => 
+                    turf.booleanPointInPolygon(feature.geometry, polygonToCheck)
+                );
+                
+                const facilitiesInside = insideFeatures.map(f => f.properties);
+
+                // 6. Display Results on Map and Table
+                renderFacilitiesOnMap(facilitiesInside);
+                renderResults(facilitiesInside);
+                
+                if (facilitiesInside.length === 0) {
+                    showMessage(`تعداد ${allFacilities.length} مرکز در BBox کلی یافت شد، اما هیچ‌کدام به طور دقیق داخل Polygon رسم شده قرار نداشتند.`, 'info');
+                } else {
+                    showMessage(`تعداد ${facilitiesInside.length} مرکز با موفقیت در داخل محدوده یافت شدند.`, 'success');
+                }
+
+            } catch (error) {
+                console.error("Analysis failed:", error);
+                // Check if the error is the expected 400 syntax error from Overpass
+                if (error.message.includes('400')) {
+                    showMessage('خطا در اجرای کوئری OSM: ممکن است محدوده‌ی BBox بسیار بزرگ باشد یا سرویس Overpass دچار مشکل شده باشد. (جزئیات خطا در کنسول).', 'error');
+                } else {
+                    showMessage(`عملیات با خطا مواجه شد. (جزئیات در کنسول). خطا: ${error.message}`, 'error');
+                }
+                renderResults([]);
+            } finally {
+                document.getElementById('loadingIndicator').classList.add('hidden');
+                document.getElementById('runButton').disabled = false;
+            }
+        }
+
+        /** Clears old markers and adds new markers to the map. */
+        function renderFacilitiesOnMap(facilities) {
+            facilityLayer.clearLayers();
+            const amenityTag = document.getElementById('facilityType').value;
+            
+            facilities.forEach(f => {
+                let iconColor = '#007bff'; // Default blue
+                
+                // Choose colors based on type
+                if (amenityTag === 'school' || amenityTag === 'university') {
+                    iconColor = '#10b981'; // Emerald Green
+                } else if (amenityTag === 'hospital' || amenityTag === 'pharmacy') {
+                    iconColor = '#ef4444'; // Red
+                } else if (amenityTag === 'fire_station') {
+                    iconColor = '#f59e0b'; // Amber Orange
+                }
+
+                // Custom icon using CSS for better aesthetic integration
+                const marker = L.marker([f.lat, f.lon]);
+                
+                marker.setIcon(L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div style="background-color:${iconColor}; color:white; border-radius:50%; width:36px; height:36px; line-height:36px; text-align:center; font-weight:bold; font-size:16px; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">${f.name.charAt(0)}</div>`,
+                    iconSize: [36, 36],
+                    iconAnchor: [18, 18]
+                }));
+                
+                marker.bindTooltip(`<b>${f.name}</b><br>Type: ${f.type}`, {permanent: false, direction: 'auto'});
+
+                facilityLayer.addLayer(marker);
+            });
+            
+            // Zoom to the markers if any were found
+            if (facilities.length > 0) {
+                const bounds = facilityLayer.getBounds();
+                if (bounds.isValid()) {
+                    map.fitBounds(bounds, {padding: [50, 50]});
+                }
+            }
+        }
+        
+        /** Renders results in a clean Tailwind-styled table. */
+        function renderResults(facilities) {
+            const tableDiv = document.getElementById('resultsTable');
+            
+            if (facilities.length === 0) {
+                tableDiv.innerHTML = '<p class="text-gray-500">هیچ مرکزی در محدوده رسم شده یافت نشد.</p>';
                 return;
             }
 
-            // Clear previous markers and show loading
-            markers.clearLayers();
-            loadingIndicator.classList.remove('hidden');
-            resultSummary.classList.add('hidden');
-            
-            const query = buildOverpassQuery(tags, currentBoundingBox);
-            const apiUrl = 'https://overpass-api.de/api/interpreter';
-            
-            try {
-                const response = await fetchWithRetry(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: `data=${encodeURIComponent(query)}`
-                });
-                
-                const data = await response.json();
-                loadingIndicator.classList.add('hidden');
-                
-                let foundCount = 0;
-                
-                data.elements.forEach(element => {
-                    let lat, lon;
-                    
-                    // Nodes have 'lat' and 'lon' directly
-                    if (element.type === 'node') {
-                        lat = element.lat;
-                        lon = element.lon;
-                    } 
-                    // Ways/Areas use 'center'
-                    else if (element.type === 'way' && element.center) {
-                        lat = element.center.lat;
-                        lon = element.center.lon;
-                    } else {
-                        return; // Skip if no valid location
-                    }
+            let tableHTML = `
+            <table class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-right-rtl text-xs font-medium text-gray-500 uppercase tracking-wider">نام مرکز</th>
+                        <th class="px-6 py-3 text-right-rtl text-xs font-medium text-gray-500 uppercase tracking-wider">نوع (تگ OSM)</th>
+                        <th class="px-6 py-3 text-right-rtl text-xs font-medium text-gray-500 uppercase tracking-wider">عرض جغرافیایی (Lat)</th>
+                        <th class="px-6 py-3 text-right-rtl text-xs font-medium text-gray-500 uppercase tracking-wider">طول جغرافیایی (Lon)</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+            `;
 
-                    // Extract name and type for the popup
-                    const name = element.tags.name || 'نامشخص';
-                    const amenity = element.tags.amenity || 'سرویس نامشخص';
-                    const type = element.tags.name ? amenity : 'فاقد نام';
-                    
-                    const marker = L.marker([lat, lon]);
-                    marker.bindPopup(`
-                        <p class="font-bold">${name}</p>
-                        <p class="text-sm">نوع سرویس: ${type}</p>
-                        <p class="text-xs text-gray-500">منبع: OSM (Overpass)</p>
-                    `);
-                    markers.addLayer(marker);
-                    foundCount++;
-                });
-
-                // Update summary box
-                resultSummary.classList.remove('hidden');
-                resultSummary.innerHTML = `
-                    <strong class="text-blue-700">${groupName}</strong>: 
-                    <span class="font-semibold">${foundCount} مکان</span> یافت شد. 
-                    <p class="text-xs text-gray-600 mt-1">
-                    شامل تگ‌هایی مانند: ${tags.map(t => `<span class="italic">${t.split('=')[1]}</span>`).join(', ')}
-                    </p>
+            facilities.forEach(f => {
+                tableHTML += `
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right-rtl">${f.name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-right-rtl">${f.type}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-right-rtl">${f.lat.toFixed(6)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-right-rtl">${f.lon.toFixed(6)}</td>
+                </tr>
                 `;
-                
-                // If markers were found, adjust map to fit them
-                if (foundCount > 0) {
-                    map.fitBounds(markers.getBounds(), { padding: [50, 50] });
-                } else {
-                    resultSummary.innerHTML = `<strong class="text-orange-500">${groupName}:</strong> متأسفانه، هیچ مکانی با تگ‌های مورد نظر در این محدوده یافت نشد.`;
-                }
+            });
 
-            } catch (error) {
-                loadingIndicator.classList.add('hidden');
-                resultSummary.classList.remove('hidden');
-                resultSummary.innerHTML = `<strong class="text-red-600">خطا در دریافت داده:</strong> ممکن است سرور Overpass شلوغ باشد. دوباره تلاش کنید.`;
-                console.error("Overpass API Error:", error);
-            }
+            tableHTML += `
+                </tbody>
+            </table>
+            `;
+            
+            tableDiv.innerHTML = tableHTML;
         }
 
-        // --- Event Listeners ---
 
-        // 1. Location Search
-        searchLocationButton.addEventListener('click', async () => {
-            const location = locationInput.value.trim();
-            if (location) {
-                await geocodeLocation(location);
-            }
-        });
-        
-        locationInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                searchLocationButton.click();
-            }
-        });
-
-        // 2. Service Group Search (New)
-        serviceGroupButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                // Remove active state from all buttons
-                serviceGroupButtons.forEach(btn => btn.classList.remove('ring-4', 'ring-opacity-50', 'ring-offset-2', 'ring-current'));
-                
-                // Add active state to the clicked button
-                button.classList.add('ring-4', 'ring-opacity-50', 'ring-offset-2', 'ring-current');
-
-                const groupName = button.getAttribute('data-group');
-                const tags = UNICEF_TAGS[groupName];
-
-                if (tags) {
-                    fetchOSMData(tags, button.textContent.trim());
-                }
-            });
-        });
-
-        // Initial setup for the map (optional: try to get user location or set a default view)
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((position) => {
-                map.setView([position.coords.latitude, position.coords.longitude], 13);
-            }, (error) => {
-                console.warn("Geolocation failed. Using default view.");
-            });
-        }
+        // --- Initialize on load ---
+        window.onload = initMap;
     </script>
-
 </body>
 </html>
