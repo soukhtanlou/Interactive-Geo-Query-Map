@@ -134,7 +134,7 @@
             const messageBox = document.getElementById('messageBox');
             const messageText = document.getElementById('messageText');
             messageText.textContent = text;
-            messageBox.className = `p-3 mt-4 border-r-4 rounded-lg text-sm ${type === 'error' ? 'bg-red-100 border-red-500 text-red-700' : 'bg-yellow-100 border-yellow-500 text-yellow-700'}`;
+            messageBox.className = `p-3 mt-4 border-r-4 rounded-lg text-sm ${type === 'error' ? 'bg-red-100 border-red-500 text-red-700' : type === 'success' ? 'bg-green-100 border-green-500 text-green-700' : 'bg-yellow-100 border-yellow-500 text-yellow-700'}`;
             messageBox.classList.remove('hidden');
         }
 
@@ -174,7 +174,16 @@
                 // Use turf.union iteratively, starting with the first feature
                 let unifiedGeometry = allFeatures[0];
                 for (let i = 1; i < allFeatures.length; i++) {
-                    unifiedGeometry = turf.union(unifiedGeometry, allFeatures[i]);
+                    // Skip if the union operation fails for any reason
+                    try {
+                        const nextUnion = turf.union(unifiedGeometry, allFeatures[i]);
+                        if (nextUnion) {
+                            unifiedGeometry = nextUnion;
+                        }
+                    } catch (innerError) {
+                        console.warn("Skipping geometry union due to error:", innerError);
+                        // Continue with the previous unified geometry
+                    }
                 }
                 return unifiedGeometry; // This is the single GeoJSON object for the combined area
             } catch(e) {
@@ -184,18 +193,24 @@
             }
         }
         
-        /** Generates the Overpass QL query string. */
+        /** Generates the corrected Overpass QL query string. */
         function generateOverpassQuery(bbox, amenityTag) {
             // bbox format: minlat, minlon, maxlat, maxlon
+            
+            // The corrected query uses the standard Bounding Box filter (bbox) 
+            // implicitly applied to all elements, avoiding the 'poly' attribute error.
             return `
 [out:json][timeout:25];
+// Set the bounding box once for the entire query
 (
-  // Nodes (points)
+  // Nodes (points) inside the BBox
   node["amenity"="${amenityTag}"](${bbox});
-  // Ways (lines/areas). We use the center point for Point-in-Polygon check.
-  way["amenity"="${amenityTag}"](if:is_closed())(poly:"${bbox.replace(/,/g, ' ')}");
-  rel["amenity"="${amenityTag}"](if:is_closed())(poly:"${bbox.replace(/,/g, ' ')}");
+  // Ways (lines/areas) inside the BBox
+  way["amenity"="${amenityTag}"](${bbox});
+  // Relations (multi-polygons/complex areas) inside the BBox
+  rel["amenity"="${amenityTag}"](${bbox});
 );
+// Output the centers of ways/relations for Point-in-Polygon check
 out center;
 `;
         }
@@ -241,17 +256,24 @@ out center;
 
                     if (response.ok) {
                         return await response.json();
-                    } else if (response.status === 429 && attempt < maxRetries - 1) {
-                        // Too Many Requests - wait and retry (Exponential Backoff)
-                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
-                        console.warn(`Attempt ${attempt + 1}: Rate limit exceeded. Retrying in ${Math.round(delay / 1000)}s...`);
-                        await new Promise(resolve => setTimeout(resolve, delay));
                     } else {
+                        // Throw specific error for immediate failure or if max retries reached
                         const errorText = await response.text();
-                        throw new Error(`Overpass API Error ${response.status}: ${errorText}`);
+                        if (response.status === 400) {
+                             throw new Error(`Overpass API Error ${response.status}: Invalid Query syntax. The full error response from the server indicates a syntax problem, likely related to polygon definition.`);
+                        }
+                        if (response.status === 429 && attempt < maxRetries - 1) {
+                            const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                            console.warn(`Attempt ${attempt + 1}: Rate limit exceeded. Retrying in ${Math.round(delay / 1000)}s...`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        } else {
+                            throw new Error(`Overpass API Error ${response.status}: Failed to fetch data.`);
+                        }
                     }
                 } catch (error) {
-                    if (attempt === maxRetries - 1) {
+                    // Log the error for console details and rethrow if it's the final attempt
+                    console.error("Fetch attempt failed:", error.message);
+                    if (attempt === maxRetries - 1 || error.message.includes('400')) {
                         throw error;
                     }
                 }
@@ -305,6 +327,12 @@ out center;
                 drawnItems.addLayer(layer);
                 hideMessage(); // Hide messages after a successful drawing
             });
+            
+            // Add listeners for edited shapes
+            map.on(L.Draw.Event.EDITED, function (e) {
+                hideMessage(); 
+            });
+
 
             // Set up file upload listener
             document.getElementById('geojsonUpload').addEventListener('change', handleGeoJSONUpload);
@@ -405,12 +433,15 @@ out center;
                 }
 
                 // 5. Filter facilities strictly inside the combined polygon using Turf.js
+                // Create a single feature for the combined polygon to check against
+                const polygonToCheck = combinedGeoJSON;
+
                 const featuresToCheck = turf.featureCollection(allFacilities.map(f => 
                     turf.point([f.lon, f.lat], f)
                 ));
 
                 const insideFeatures = featuresToCheck.features.filter(feature => 
-                    turf.booleanPointInPolygon(feature.geometry, combinedGeoJSON)
+                    turf.booleanPointInPolygon(feature.geometry, polygonToCheck)
                 );
                 
                 const facilitiesInside = insideFeatures.map(f => f.properties);
@@ -427,7 +458,12 @@ out center;
 
             } catch (error) {
                 console.error("Analysis failed:", error);
-                showMessage(`عملیات با خطا مواجه شد. (جزئیات در کنسول). خطا: ${error.message}`, 'error');
+                // Check if the error is the expected 400 syntax error from Overpass
+                if (error.message.includes('400')) {
+                    showMessage('خطا در اجرای کوئری OSM: ممکن است محدوده‌ی BBox بسیار بزرگ باشد یا سرویس Overpass دچار مشکل شده باشد. (جزئیات خطا در کنسول).', 'error');
+                } else {
+                    showMessage(`عملیات با خطا مواجه شد. (جزئیات در کنسول). خطا: ${error.message}`, 'error');
+                }
                 renderResults([]);
             } finally {
                 document.getElementById('loadingIndicator').classList.add('hidden');
@@ -441,31 +477,28 @@ out center;
             const amenityTag = document.getElementById('facilityType').value;
             
             facilities.forEach(f => {
-                let iconColor = 'blue';
-                let iconName = 'star'; // default icon
+                let iconColor = '#007bff'; // Default blue
                 
-                // Choose icons based on type (using Font Awesome icons via Leaflet.awesome-markers)
+                // Choose colors based on type
                 if (amenityTag === 'school' || amenityTag === 'university') {
-                    iconColor = 'green';
-                    iconName = 'graduation-cap';
+                    iconColor = '#10b981'; // Emerald Green
                 } else if (amenityTag === 'hospital' || amenityTag === 'pharmacy') {
-                    iconColor = 'red';
-                    iconName = 'medkit';
+                    iconColor = '#ef4444'; // Red
                 } else if (amenityTag === 'fire_station') {
-                    iconColor = 'orange';
-                    iconName = 'fire';
+                    iconColor = '#f59e0b'; // Amber Orange
                 }
 
-                // Simple Leaflet Marker
-                const marker = L.marker([f.lat, f.lon]).bindPopup(`<b>${f.name}</b><br>Type: ${f.type}`);
+                // Custom icon using CSS for better aesthetic integration
+                const marker = L.marker([f.lat, f.lon]);
                 
-                // Simple custom icon to show the difference
                 marker.setIcon(L.divIcon({
                     className: 'custom-div-icon',
-                    html: `<div style="background-color:${iconColor}; color:white; border-radius:50%; width:30px; height:30px; line-height:30px; text-align:center; font-weight:bold; border: 2px solid white;">${f.name.charAt(0)}</div>`,
-                    iconSize: [30, 42],
-                    iconAnchor: [15, 21]
+                    html: `<div style="background-color:${iconColor}; color:white; border-radius:50%; width:36px; height:36px; line-height:36px; text-align:center; font-weight:bold; font-size:16px; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">${f.name.charAt(0)}</div>`,
+                    iconSize: [36, 36],
+                    iconAnchor: [18, 18]
                 }));
+                
+                marker.bindTooltip(`<b>${f.name}</b><br>Type: ${f.type}`, {permanent: false, direction: 'auto'});
 
                 facilityLayer.addLayer(marker);
             });
@@ -474,7 +507,7 @@ out center;
             if (facilities.length > 0) {
                 const bounds = facilityLayer.getBounds();
                 if (bounds.isValid()) {
-                    map.fitBounds(bounds);
+                    map.fitBounds(bounds, {padding: [50, 50]});
                 }
             }
         }
