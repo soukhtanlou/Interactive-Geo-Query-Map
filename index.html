@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>نقشه تعاملی و جستجوی جغرافیایی (Geo-Query Map)</title>
+    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Custom CSS for map container and text alignment */
@@ -33,23 +34,29 @@
             list-style-type: disc;
         }
     </style>
+    <!-- Load Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <!-- Load Leaflet Draw CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
 </head>
 <body class="p-4 sm:p-8">
 
     <div class="container mx-auto">
+        <!-- Header -->
         <header class="mb-8 text-center bg-white p-6 rounded-xl shadow-lg">
             <h1 class="text-3xl font-extrabold text-blue-700 mb-2">OSM Facility Locator (جستجوی مراکز عمومی)</h1>
             <p class="text-gray-600">لایه مورد نظر خود را روی نقشه رسم کنید و مراکز عمومی (مانند مدارس یا بیمارستان‌ها) را در محدوده آن بیابید.</p>
         </header>
 
+        <!-- Main Grid Layout -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
+            <!-- Sidebar / Controls -->
             <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg h-full space-y-6">
                 
                 <h2 class="text-xl font-bold text-gray-800 border-b pb-3 mb-4">تنظیمات و داده‌ها</h2>
 
+                <!-- 1. Facility Type Selector -->
                 <div class="space-y-2">
                     <label for="facilityType" class="block text-sm font-medium text-gray-700">۱. نوع مرکز مورد جستجو را انتخاب کنید:</label>
                     <select id="facilityType" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150">
@@ -63,6 +70,7 @@
                     </select>
                 </div>
 
+                <!-- 2. GeoJSON Upload -->
                 <div class="space-y-2">
                     <label for="geojsonUpload" class="block text-sm font-medium text-gray-700">۲. محدوده را آپلود کنید (GeoJSON Polygon):</label>
                     <input type="file" id="geojsonUpload" accept=".geojson,.json" class="w-full text-sm text-gray-500
@@ -75,6 +83,7 @@
                 </div>
                 <div id="uploadStatus" class="text-sm text-red-600 hidden mt-1"></div>
 
+                <!-- 3. Action Button -->
                 <button onclick="runAnalysis()" id="runButton" class="w-full flex items-center justify-center bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition duration-200 disabled:opacity-50">
                     <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.276a1.2 1.2 0 010 1.698l-7 7a1.2 1.2 0 01-1.698 0l-3-3a1.2 1.2 0 111.698-1.698l2.302 2.302 6.302-6.302a1.2 1.2 0 011.698 0z"></path></svg>
                     شروع جستجو در محدوده تعریف شده
@@ -86,12 +95,14 @@
                 </div>
             </div>
 
+            <!-- Map and Results -->
             <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg">
                 <h2 class="text-xl font-bold text-gray-800 border-b pb-3 mb-4">نقشه و ترسیم منطقه (AOI)</h2>
                 <div id="map"></div>
                 
                 <h2 class="text-xl font-bold text-gray-800 border-b pb-3 mt-8 mb-4">نتایج جستجو</h2>
                 <div id="resultsTable" class="overflow-x-auto">
+                    <!-- Results Data will be inserted here -->
                     <p class="text-gray-500">پس از تعریف محدوده و اجرای جستجو، نتایج در این قسمت نمایش داده می‌شوند.</p>
                 </div>
             </div>
@@ -99,8 +110,11 @@
         </div>
     </div>
 
+    <!-- Load Leaflet JS -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Load Turf.js (for geometry operations like BBox and Point-in-Polygon) -->
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <!-- Load Leaflet Draw JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     
     <script>
@@ -135,7 +149,6 @@
             
             // 1. Get features from manually drawn layers
             drawnItems.eachLayer(function(layer) {
-                // Ensure layer is a Polygon (or compatible shape like Rectangle which is a Polygon)
                 if (layer instanceof L.Polygon) {
                     allFeatures.push(layer.toGeoJSON());
                 }
@@ -144,10 +157,9 @@
             // 2. Get features from uploaded GeoJSON
             if (uploadedGeoJsonLayer) {
                 uploadedGeoJsonLayer.eachLayer(function(layer) {
-                    // Check if the layer has geometry data and is a polygon type
+                    // Check if the layer has geometry data
                     const geojson = layer.toGeoJSON ? layer.toGeoJSON() : layer.feature;
-                    const type = geojson && geojson.geometry ? geojson.geometry.type : null;
-                    if (geojson && (type === 'Polygon' || type === 'MultiPolygon')) {
+                    if (geojson) {
                         allFeatures.push(geojson);
                     }
                 });
@@ -164,20 +176,19 @@
                 for (let i = 1; i < allFeatures.length; i++) {
                     // Skip if the union operation fails for any reason
                     try {
-                        // Ensure both geometries are valid for union (e.g., are Polygon/MultiPolygon)
                         const nextUnion = turf.union(unifiedGeometry, allFeatures[i]);
                         if (nextUnion) {
                             unifiedGeometry = nextUnion;
                         }
                     } catch (innerError) {
-                        console.warn("Skipping geometry union due to error (layer might be too small or invalid):", innerError);
-                        // If union fails, proceed with the previous geometry
+                        console.warn("Skipping geometry union due to error:", innerError);
+                        // Continue with the previous unified geometry
                     }
                 }
                 return unifiedGeometry; // This is the single GeoJSON object for the combined area
             } catch(e) {
                 console.error("Error unifying geometries:", e);
-                showMessage('خطا در ترکیب لایه‌های رسم شده/آپلود شده. لطفاً اشکال خود را بررسی کنید (آیا همپوشانی دارند؟)', 'error');
+                showMessage('خطا در ترکیب لایه‌های رسم شده/آپلود شده. لطفاً اشکال خود را بررسی کنید.', 'error');
                 return null;
             }
         }
@@ -186,11 +197,11 @@
         function generateOverpassQuery(bbox, amenityTag) {
             // bbox format: minlat, minlon, maxlat, maxlon
             
-            // The query uses the standard Bounding Box filter (bbox)
-            // implicitly applied to all elements.
+            // The corrected query uses the standard Bounding Box filter (bbox) 
+            // implicitly applied to all elements, avoiding the 'poly' attribute error.
             return `
-[out:json][timeout:60]; /* Increased timeout for safety */
-// Set the bounding box for the query
+[out:json][timeout:25];
+// Set the bounding box once for the entire query
 (
   // Nodes (points) inside the BBox
   node["amenity"="${amenityTag}"](${bbox});
@@ -246,23 +257,21 @@ out center;
                     if (response.ok) {
                         return await response.json();
                     } else {
+                        // Throw specific error for immediate failure or if max retries reached
                         const errorText = await response.text();
-                        if (response.status === 400 || response.status === 429) {
-                            console.error("Overpass Response Error:", errorText); // Log full error response
-                            // Specifically throw to be caught by runAnalysis for specific message
-                            throw new Error(`Overpass API Error ${response.status}: Failed to fetch data. Check console for details.`); 
+                        if (response.status === 400) {
+                             throw new Error(`Overpass API Error ${response.status}: Invalid Query syntax. The full error response from the server indicates a syntax problem, likely related to polygon definition.`);
                         }
-                        
-                        // Handle other recoverable errors with retry
-                        if (attempt < maxRetries - 1) {
+                        if (response.status === 429 && attempt < maxRetries - 1) {
                             const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
-                            console.warn(`Attempt ${attempt + 1}: Retrying in ${Math.round(delay / 1000)}s...`);
+                            console.warn(`Attempt ${attempt + 1}: Rate limit exceeded. Retrying in ${Math.round(delay / 1000)}s...`);
                             await new Promise(resolve => setTimeout(resolve, delay));
                         } else {
-                            throw new Error(`Overpass API Error ${response.status}: Max retries reached.`);
+                            throw new Error(`Overpass API Error ${response.status}: Failed to fetch data.`);
                         }
                     }
                 } catch (error) {
+                    // Log the error for console details and rethrow if it's the final attempt
                     console.error("Fetch attempt failed:", error.message);
                     if (attempt === maxRetries - 1 || error.message.includes('400')) {
                         throw error;
@@ -303,7 +312,7 @@ out center;
                         shapeOptions: { color: '#007bff', fillColor: '#007bff', fillOpacity: 0.1 }
                     },
                     polyline: false,
-                    rectangle: true, // Re-enabled rectangle as it's a common need
+                    rectangle: false,
                     circle: false,
                     marker: false,
                     circlemarker: false
@@ -314,12 +323,6 @@ out center;
             // Add listeners for drawn shapes
             map.on(L.Draw.Event.CREATED, function (e) {
                 const layer = e.layer;
-                // Clear all previous drawn items before adding the new one (Optional, but simplifies logic)
-                drawnItems.clearLayers();
-                uploadedGeoJsonLayer && map.removeLayer(uploadedGeoJsonLayer);
-                uploadedGeoJsonLayer = null; // Also clear GeoJSON on draw
-                document.getElementById('geojsonUpload').value = '';
-                
                 // Add the new layer to the drawn items group
                 drawnItems.addLayer(layer);
                 hideMessage(); // Hide messages after a successful drawing
@@ -347,11 +350,9 @@ out center;
                     try {
                         const geojsonData = JSON.parse(e.target.result);
                         
-                        // Clear manually drawn layers
-                        drawnItems.clearLayers();
-
                         // Clear existing uploaded layer
                         if (uploadedGeoJsonLayer) {
+                            uploadedGeoJsonLayer.clearLayers();
                             map.removeLayer(uploadedGeoJsonLayer);
                         }
 
@@ -414,17 +415,8 @@ out center;
                 // Turf.js bbox returns [minX, minY, maxX, maxY] -> [minLon, minLat, maxLon, maxLat]
                 const bboxTurf = turf.bbox(combinedGeoJSON);
                 
-                // --- اعتبارسنجی اضافه شده برای جلوگیری از خطای Overpass ---
-                if (!Array.isArray(bboxTurf) || bboxTurf.length !== 4 || bboxTurf.some(isNaN)) {
-                    showMessage('خطا: محدوده (BBox) رسم شده یا آپلود شده معتبر نیست. لطفاً Polygon معتبری را رسم/آپلود کنید.', 'error');
-                    return;
-                }
-                // -----------------------------------------------------------
-                
                 // Overpass format is: minlat, minlon, maxlat, maxlon
                 const bboxOverpass = `${bboxTurf[1]},${bboxTurf[0]},${bboxTurf[3]},${bboxTurf[2]}`; 
-                
-                console.log("BBox (Overpass Format):", bboxOverpass); // For debugging
                 
                 // 3. Get facility type
                 const amenityTag = document.getElementById('facilityType').value;
@@ -435,12 +427,13 @@ out center;
                 const allFacilities = parseOverpassData(jsonResponse);
                 
                 if (allFacilities.length === 0) {
-                    showMessage(`مرکزی با تگ "${amenityTag}" در این منطقه (حتی در BBox) یافت نشد.`, 'info');
+                    showMessage(`مرکزی با تگ "${amenityTag}" در این منطقه یافت نشد (حتی در BBox).`, 'info');
                     renderResults(allFacilities);
                     return;
                 }
 
                 // 5. Filter facilities strictly inside the combined polygon using Turf.js
+                // Create a single feature for the combined polygon to check against
                 const polygonToCheck = combinedGeoJSON;
 
                 const featuresToCheck = turf.featureCollection(allFacilities.map(f => 
@@ -465,13 +458,10 @@ out center;
 
             } catch (error) {
                 console.error("Analysis failed:", error);
-                // Catch the specific error thrown by fetchOverpassData
+                // Check if the error is the expected 400 syntax error from Overpass
                 if (error.message.includes('400')) {
-                    showMessage('خطا در اجرای کوئری OSM (خطا ۴۰۰): ممکن است محدوده‌ی BBox بسیار بزرگ باشد یا Polygon معتبر نباشد. (جزئیات خطا در کنسول).', 'error');
-                } else if (error.message.includes('429')) {
-                    showMessage('خطا در اجرای کوئری OSM (خطا ۴۲۹): محدودیت نرخ ارسال کوئری (Rate Limit) سرور Overpass فعال شده است. لطفاً کمی صبر کنید و دوباره تلاش کنید.', 'error');
-                }
-                 else {
+                    showMessage('خطا در اجرای کوئری OSM: ممکن است محدوده‌ی BBox بسیار بزرگ باشد یا سرویس Overpass دچار مشکل شده باشد. (جزئیات خطا در کنسول).', 'error');
+                } else {
                     showMessage(`عملیات با خطا مواجه شد. (جزئیات در کنسول). خطا: ${error.message}`, 'error');
                 }
                 renderResults([]);
